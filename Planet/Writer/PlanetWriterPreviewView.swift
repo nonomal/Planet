@@ -9,12 +9,11 @@ import SwiftUI
 
 
 struct PlanetWriterPreviewView: View {
-    var url: URL!
-    var targetID: UUID
+    var url: URL?
 
     var body: some View {
         VStack {
-            PlanetWriterWebView(url: url == nil ? Bundle.main.url(forResource: "WriterBasicPlaceholder", withExtension: "html")! : url, targetID: targetID)
+            WriterWebView(url: url == nil ? Bundle.main.url(forResource: "WriterBasicPlaceholder", withExtension: "html")! : url!)
         }.background(Color(NSColor.textBackgroundColor))
     }
 }

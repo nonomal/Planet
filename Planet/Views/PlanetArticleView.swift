@@ -1,18 +1,10 @@
-//
-//  PlanetArticleView.swift
-//  Planet
-//
-//  Created by Kai on 1/15/22.
-//
-
 import SwiftUI
-import WebKit
-
 
 struct PlanetArticleView: View {
-    @EnvironmentObject private var planetStore: PlanetStore
+    static let noSelectionURL = Bundle.main.url(forResource: "NoSelection.html", withExtension: "")!
+    @EnvironmentObject var planetStore: PlanetStore
 
-    @State private var url: URL = Bundle.main.url(forResource: "NoSelection.html", withExtension: "")!
+    @State private var url = Self.noSelectionURL
 
     var body: some View {
         VStack {
@@ -21,24 +13,25 @@ struct PlanetArticleView: View {
         .background(
             Color(NSColor.textBackgroundColor)
         )
-        .onChange(of: planetStore.currentArticle) { newArticle in
+        .onChange(of: planetStore.selectedArticle) { newArticle in
             Task.init {
-                if let article = planetStore.currentArticle {
-                    if let articleURL = await PlanetManager.shared.articleURL(article: article) {
-                        url = articleURL
-                        article.isRead = true
-                        PlanetDataController.shared.save()
-
-                        NotificationCenter.default.post(name: .loadArticle, object: nil)
+                switch newArticle {
+                case .myArticle(let myArticle):
+                    url = myArticle.publicIndexPath
+                case .followingArticle(let followingArticle):
+                    if let webviewURL = await followingArticle.webviewURL {
+                        url = webviewURL
+                    } else {
+                        url = Self.noSelectionURL
                     }
-                } else {
-                    url = Bundle.main.url(forResource: "NoSelection.html", withExtension: "")!
-                    NotificationCenter.default.post(name: .loadArticle, object: nil)
+                default:
+                    url = Self.noSelectionURL
                 }
+                NotificationCenter.default.post(name: .loadArticle, object: nil)
             }
         }
-        .onChange(of: planetStore.currentPlanet) { newPlanet in
-            url = Bundle.main.url(forResource: "NoSelection.html", withExtension: "")!
+        .onChange(of: planetStore.selectedView) { _ in
+            url = Self.noSelectionURL
             NotificationCenter.default.post(name: .loadArticle, object: nil)
         }
     }

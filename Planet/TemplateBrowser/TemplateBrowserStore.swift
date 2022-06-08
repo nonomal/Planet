@@ -15,10 +15,14 @@ class TemplateBrowserStore: ObservableObject {
 
     func loadTemplates() {
         do {
-            let directories = try FileManager.default.listSubdirectories(url: URLUtils.templatesPath)
+            let files = try FileManager.default.contentsOfDirectory(
+                at: URLUtils.legacyTemplatesPath,
+                includingPropertiesForKeys: nil
+            )
+            let directories = files.filter { $0.hasDirectoryPath }
             var templatesMapping: [String: Template] = [:]
             for directory in directories {
-                if let template = Template.from(url: directory) {
+                if let template = Template.from(path: directory) {
                     templatesMapping[template.name] = template
                 }
             }
@@ -39,10 +43,10 @@ class TemplateBrowserStore: ObservableObject {
                     debugPrint("Overwriting local built-in template \(builtInTemplate.name)")
                     let source = builtInTemplate.base!
                     let directoryName = source.lastPathComponent
-                    let destination = URLUtils.templatesPath.appendingPathComponent(directoryName, isDirectory: true)
+                    let destination = URLUtils.legacyTemplatesPath.appendingPathComponent(directoryName, isDirectory: true)
                     try? FileManager.default.removeItem(at: destination)
                     try FileManager.default.copyItem(at: source, to: destination)
-                    let newTemplate = Template.from(url: destination)!
+                    let newTemplate = Template.from(path: destination)!
                     templatesMapping[newTemplate.name] = newTemplate
                 }
             }
@@ -59,7 +63,7 @@ class TemplateBrowserStore: ObservableObject {
     }
 
     func hasTemplate(named name: String) -> Bool {
-        return templates.contains(where: { $0.name == name })
+        templates.contains(where: { $0.name == name })
     }
 
     subscript(templateID: Template.ID?) -> Template? {

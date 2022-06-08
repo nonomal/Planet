@@ -9,15 +9,13 @@ import SwiftUI
 
 
 struct EditPlanetView: View {
-    @EnvironmentObject private var planetStore: PlanetStore
+    @Environment(\.dismiss) var dismiss
 
-    @Environment(\.dismiss) private var dismiss
-
-    var planet: Planet
-
-    @State private var name: String = ""
-    @State private var about: String = ""
-    @State private var templateName: String = ""
+    @EnvironmentObject var planetStore: PlanetStore
+    @ObservedObject var planet: MyPlanetModel
+    @State private var name = ""
+    @State private var about = ""
+    @State private var templateName = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,26 +96,24 @@ struct EditPlanetView: View {
                     }
                     planet.about = about
                     planet.templateName = templateName
-                    try? FileManager.default.removeItem(at: planet.assetsURL)
 
-                    // re-render all articles
-                    let articles = PlanetDataController.shared.getArticles(byPlanetID: planet.id!)
-                    for article in articles {
-                        try? PlanetManager.shared.renderArticle(article)
+                    do {
+                        try planet.savePublic()
+                    } catch {
+                        // TODO: alert
                     }
-                    PlanetDataController.shared.save()
+
+                    Task {
+                        if !planet.isPublishing {
+                            do {
+                                try await planet.publish()
+                            } catch {}
+                        }
+                    }
+                    // re-render all articles
                     NotificationCenter.default.post(name: .refreshArticle, object: nil)
                     dismiss()
 
-                    Task.init {
-                        if !planet.isPublishing {
-                            planet.isPublishing = true
-                            do {
-                                try await PlanetManager.shared.publish(planet)
-                            } catch {}
-                            planet.isPublishing = false
-                        }
-                    }
                 } label: {
                     Text("Save")
                 }
@@ -128,17 +124,9 @@ struct EditPlanetView: View {
         .padding(0)
         .frame(width: 480, height: 300, alignment: .center)
         .task {
-            name = planet.name ?? ""
-            about = planet.about ?? ""
-            templateName = planet.templateName ?? "Plain"
+            name = planet.name
+            about = planet.about
+            templateName = planet.templateName
         }
-    }
-}
-
-struct EditPlanetView_Previews: PreviewProvider {
-    static var previews: some View {
-        EditPlanetView(planet: Planet())
-            .environmentObject(PlanetStore.shared)
-            .frame(width: 480, height: 300, alignment: .center)
     }
 }

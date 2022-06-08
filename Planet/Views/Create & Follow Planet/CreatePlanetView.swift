@@ -9,13 +9,12 @@ import SwiftUI
 
 
 struct CreatePlanetView: View {
-    @EnvironmentObject private var planetStore: PlanetStore
+    @Environment(\.dismiss) var dismiss
 
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var name: String = ""
-    @State private var about: String = ""
-    @State private var templateName: String = "Plain"
+    @EnvironmentObject var planetStore: PlanetStore
+    @State private var name = ""
+    @State private var about = ""
+    @State private var templateName = "Plain"
     @State private var creating = false
 
     var body: some View {
@@ -106,9 +105,14 @@ struct CreatePlanetView: View {
                     creating = true
                     Task.init {
                         do {
-                            let _ = try await Planet.createMyPlanet(name: name, about: about, templateName: templateName)
+                            let planet = try await MyPlanetModel.create(
+                                name: name,
+                                about: about,
+                                templateName: templateName
+                            )
+                            planetStore.myPlanets.insert(planet, at: 0)
                         } catch {
-                            PlanetManager.shared.alert(title: "Failed to create planet")
+                            PlanetStore.shared.alert(title: "Failed to create planet")
                         }
                         creating = false
                         dismiss()
@@ -122,13 +126,5 @@ struct CreatePlanetView: View {
         }
         .padding(0)
         .frame(width: 480, height: 300, alignment: .center)
-    }
-}
-
-struct CreatePlanetView_Previews: PreviewProvider {
-    static var previews: some View {
-        CreatePlanetView()
-            .environmentObject(PlanetStore.shared)
-            .frame(width: 480, height: 300, alignment: .center)
     }
 }
