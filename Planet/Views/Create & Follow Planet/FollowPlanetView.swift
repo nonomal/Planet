@@ -4,7 +4,7 @@ struct FollowPlanetView: View {
     @Environment(\.dismiss) var dismiss
 
     @EnvironmentObject var planetStore: PlanetStore
-    @State var link = "planet://"
+    @State var link = ""
     @State var isFollowing = false
     @State var isCancelled = false
 
@@ -19,65 +19,40 @@ struct FollowPlanetView: View {
 
             Divider()
 
-            HStack {
-                TextEditor(text: $link)
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
-                    .lineSpacing(4)
-                    .disableAutocorrection(true)
-                    .cornerRadius(6)
-                    .frame(height: 60)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.25), lineWidth: 1.0)
-                    )
+            VStack {
+                if isFollowing {
+                    Text("Following \(link)")
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                } else {
+                    TextEditor(text: $link)
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .lineSpacing(4)
+                        .disableAutocorrection(true)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.secondary.opacity(0.25), lineWidth: 1.0)
+                        )
+                }
             }
+            .frame(height: 60)
             .padding(.all, 16)
-            .frame(width: 480)
 
             Divider()
 
             HStack {
                 Button {
-                    isCancelled = true
-                    isFollowing = false
-                    dismiss()
+                    cancelAction()
                 } label: {
-                    Text("Dismiss")
+                    Text("Cancel")
                 }
                 .keyboardShortcut(.escape, modifiers: [])
 
                 Spacer()
 
-                if isFollowing {
-                    HStack {
-                        ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(0.5, anchor: .center)
-                    }
-                    .padding(.horizontal, 4)
-                    .frame(height: 10)
-                }
-
                 Button {
-                    isFollowing = true
-                    Task {
-                        do {
-                            let planet = try await FollowingPlanetModel.follow(link: link)
-                            if isCancelled {
-                                planet.delete()
-                            } else {
-                                planetStore.followingPlanets.insert(planet, at: 0)
-                                PlanetStore.shared.selectedView = .followingPlanet(planet)
-                            }
-                        } catch PlanetError.PlanetExistsError {
-                            // ignore
-                        } catch {
-                            PlanetStore.shared.alert(title: "Failed to follow planet")
-                        }
-                        isCancelled = false
-                        isFollowing = false
-                        dismiss()
-                    }
+                    followAction()
                 } label: {
                     Text("Follow")
                 }
@@ -85,6 +60,83 @@ struct FollowPlanetView: View {
             }
             .padding(16)
         }
-        .frame(alignment: .center)
+        .frame(width: 480, alignment: .center)
+        .task {
+            // Follow a new planet from internal planet link.
+            Task { @MainActor in
+                guard self.planetStore.followingPlanetLink != "" else { return }
+                self.link = self.planetStore.followingPlanetLink
+                self.followAction()
+            }
+        }
+    }
+
+    private func processInput() -> String {
+        let link = self.link.trimmingCharacters(in: .whitespacesAndNewlines)
+        if link.hasPrefix("https://") || link.hasPrefix("http://") {
+            if let url = URL(string: link) {
+                // If a user pastes a URL like `https://ohlife.eth.sucks/`, we should extract only the ENS part from it: `ohlife.eth`.
+                if let host: String = url.host {
+                    if host.hasSuffix(".eth.sucks") {
+                        return String(host.dropLast(6))
+                    }
+                    if host.hasSuffix(".eth.limo") {
+                        return String(host.dropLast(5))
+                    }
+                    if host.hasSuffix(".bit.site") {
+                        return String(host.dropLast(5))
+                    }
+                }
+            }
+        }
+        return link
+    }
+
+    private func cancelAction() {
+        isCancelled = true
+        isFollowing = false
+        dismiss()
+        Task { @MainActor in
+            self.planetStore.followingPlanetLink = ""
+        }
+    }
+
+    private func followAction() {
+        isFollowing = true
+        let link = processInput()
+        debugPrint("Follow Planet: Target \(link)")
+        Task {
+            do {
+                let planet = try await FollowingPlanetModel.follow(link: link)
+                if isCancelled {
+                    planet.delete()
+                } else {
+                    planetStore.followingPlanets.insert(planet, at: 0)
+                    planetStore.selectedView = .followingPlanet(planet)
+                }
+            } catch PlanetError.PlanetExistsError {
+                // ignore
+            } catch PlanetError.ENSNoContentHashError {
+                if !isCancelled {
+                    PlanetStore.shared.alert(
+                        title: "Unable to follow planet",
+                        message: "This ENS has no contenthash."
+                    )
+                }
+            } catch {
+                if !isCancelled {
+                    PlanetStore.shared.alert(
+                        title: "Failed to follow planet",
+                        message: "\(error)"
+                    )
+                }
+            }
+            isCancelled = false
+            isFollowing = false
+            dismiss()
+            Task { @MainActor in
+                self.planetStore.followingPlanetLink = ""
+            }
+        }
     }
 }

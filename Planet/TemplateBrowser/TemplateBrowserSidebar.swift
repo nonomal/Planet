@@ -2,17 +2,20 @@
 //  TemplateBrowserSidebar.swift
 //  Planet
 //
-//  Created by Livid on 4/13/22.
+//  Created by Xin Liu on 4/13/22.
 //
 
 import SwiftUI
 
 struct TemplateBrowserSidebar: View {
-    @StateObject var store = TemplateStore.shared
-    @Binding var selection: Template.ID?
+    @StateObject private var store: TemplateStore
+
+    init() {
+        _store = StateObject(wrappedValue: TemplateStore.shared)
+    }
 
     var body: some View {
-        List(selection: $selection) {
+        List(selection: $store.selectedTemplateID) {
             ForEach(store.templates, id: \.id) { template in
                 HStack {
                     Text(template.name)
@@ -27,9 +30,36 @@ struct TemplateBrowserSidebar: View {
                         Button {
                             openVSCode(template)
                         } label: {
-                            Text("Open in VSCode")
+                            Image(systemName: "chevron.left.slash.chevron.right")
+                            Text("Edit Template")
                         }
                     }
+
+                    Divider()
+
+                    if hasTower() {
+                        Button {
+                            openTower(template)
+                        } label: {
+                            Text("Open in Tower")
+                        }
+                    }
+
+                    Button {
+                        openTerminal(template)
+                    } label: {
+                        Text("Open in Terminal")
+                    }
+
+                    if hasiTerm() {
+                        Button {
+                            openiTerm(template)
+                        } label: {
+                            Text("Open in iTerm")
+                        }
+                    }
+
+                    Divider()
 
                     Button(action: {
                         revealInFinder(template)
@@ -39,7 +69,36 @@ struct TemplateBrowserSidebar: View {
                 }
             }
         }
-        .frame(minWidth: 200)
+        .listStyle(.sidebar)
+        .frame(minWidth: PlanetUI.WINDOW_SIDEBAR_WIDTH_MIN, idealWidth: PlanetUI.WINDOW_SIDEBAR_WIDTH_MIN, maxWidth: PlanetUI.WINDOW_SIDEBAR_WIDTH_MAX, minHeight: PlanetUI.WINDOW_CONTENT_HEIGHT_MIN, idealHeight: PlanetUI.WINDOW_CONTENT_HEIGHT_MIN, maxHeight: .infinity)
+    }
+
+    private func hasiTerm() -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil
+    }
+
+    private func openiTerm(_ template: Template) {
+        guard
+            let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
+        else { return }
+
+        let url = URL(fileURLWithPath: template.path.path)
+        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: self.openConfiguration(), completionHandler: nil)
+    }
+
+    // TODO: Needs a general method for opening template in various installed apps.
+
+    private func hasTower() -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.fournova.Tower3") != nil
+    }
+
+    private func openTower(_ template: Template) {
+        guard
+            let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.fournova.Tower3")
+        else { return }
+
+        let url = URL(fileURLWithPath: template.path.path)
+        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: self.openConfiguration(), completionHandler: nil)
     }
 
     private func hasVSCode() -> Bool {
@@ -58,6 +117,16 @@ struct TemplateBrowserSidebar: View {
     private func revealInFinder(_ template: Template) {
         let url = URL(fileURLWithPath: template.path.path)
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+    }
+
+    private func openTerminal(_ template: Template) {
+        guard
+            let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
+        else { return }
+
+        let url = URL(fileURLWithPath: template.path.path)
+
+        NSWorkspace.shared.open([url], withApplicationAt: appUrl, configuration: self.openConfiguration(), completionHandler: nil)
     }
 
     private func openConfiguration() -> NSWorkspace.OpenConfiguration {

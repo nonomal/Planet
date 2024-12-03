@@ -6,17 +6,8 @@ import ENSKit
 import SwiftSoup
 
 
-enum PublicGateway: String {
-    case cloudflare = "www.cloudflare-ipfs.com"
-    case ipfs = "ipfs.io"
-    case dweb = "dweb.link"
-}
-
 class CoreDataPersistence: NSObject {
     static let shared = CoreDataPersistence()
-
-    // let enskit = ENSKit(jsonrpcClient: InfuraEthereumAPI(url: URL(string: "https://mainnet.infura.io/v3/<projectid>")!))
-    let enskit = ENSKit(ipfsClient: GoIPFSGateway())
 
     var persistentContainer: NSPersistentContainer
 
@@ -55,7 +46,7 @@ class CoreDataPersistence: NSObject {
             }
         }
     }
-    
+
     func getPlanets() -> [Planet] {
         let request: NSFetchRequest<Planet> = Planet.fetchRequest()
         request.predicate = NSPredicate(format: "softDeleted == nil")
@@ -66,7 +57,7 @@ class CoreDataPersistence: NSObject {
             return []
         }
     }
-    
+
     func getLocalPlanets(context: NSManagedObjectContext? = nil) -> Set<Planet> {
         let request: NSFetchRequest<Planet> = Planet.fetchRequest()
         request.predicate = NSPredicate(format: "keyName != nil && keyID != nil && softDeleted == nil")
@@ -79,7 +70,7 @@ class CoreDataPersistence: NSObject {
         }
         return Set()
     }
-    
+
     func getArticles(byPlanetID id: UUID, context: NSManagedObjectContext? = nil) -> [PlanetArticle] {
         let request: NSFetchRequest<PlanetArticle> = PlanetArticle.fetchRequest()
         request.predicate = NSPredicate(format: "planetID == %@ && softDeleted == nil", id as CVarArg)

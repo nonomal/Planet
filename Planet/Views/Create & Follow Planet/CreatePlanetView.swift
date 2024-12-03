@@ -6,12 +6,12 @@ struct CreatePlanetView: View {
     @EnvironmentObject var planetStore: PlanetStore
     @State private var name = ""
     @State private var about = ""
-    @State private var templateName = "Plain"
+    @State private var templateName = (Bundle.main.executableURL?.lastPathComponent == "Croptop") ? "Croptop" : "Plain"
     @State private var creating = false
 
     var body: some View {
         VStack (spacing: 0) {
-            Text("New Planet")
+            Text(PlanetStore.app == .planet ? "New Planet" : "New Site")
                 .frame(height: 34, alignment: .leading)
                 .padding(.bottom, 2)
                 .padding(.horizontal, 16)
@@ -52,19 +52,21 @@ struct CreatePlanetView: View {
                         )
                 }
 
-                Picker(selection: $templateName) {
-                    ForEach(TemplateStore.shared.templates) { template in
-                        Text(template.name)
-                            .tag(template.name)
+                if PlanetStore.app == .planet {
+                    Picker(selection: $templateName) {
+                        ForEach(TemplateStore.shared.templates) { template in
+                            Text(template.name)
+                                .tag(template.name)
+                        }
+                    } label: {
+                        HStack {
+                            Text("Template")
+                            Spacer()
+                        }
+                        .frame(width: 70)
                     }
-                } label: {
-                    HStack {
-                        Text("Template")
-                        Spacer()
-                    }
-                    .frame(width: 70)
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
 
                 Spacer()
             }
@@ -77,7 +79,7 @@ struct CreatePlanetView: View {
                     creating = false
                     dismiss()
                 } label: {
-                    Text("Close")
+                    Text("Cancel")
                 }
                 .keyboardShortcut(.escape, modifiers: [])
 
@@ -103,9 +105,12 @@ struct CreatePlanetView: View {
                                 templateName: templateName
                             )
                             planetStore.myPlanets.insert(planet, at: 0)
+                            Task(priority: .background) {
+                                await PlanetStore.shared.saveMyPlanetsOrder()
+                            }
                             planetStore.selectedView = .myPlanet(planet)
                             try planet.save()
-                            try planet.savePublic()
+                            try await planet.savePublic()
                         } catch {
                             PlanetStore.shared.alert(title: "Failed to create planet")
                         }
@@ -119,6 +124,6 @@ struct CreatePlanetView: View {
             }
             .padding(16)
         }
-        .frame(width: 480, height: 300, alignment: .center)
+        .frame(width: 480, alignment: .center)
     }
 }
