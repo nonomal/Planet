@@ -2,35 +2,42 @@ import Foundation
 
 struct IPFSCommand {
     // executables are under <project_root>/Planet/IPFS/go-ipfs-executables
-    // version: 0.12.2, last updated 2022-04-15
+    // version: 0.16.0, last updated 2022-10-04
+    // version: 0.28.0, last updated 2024-05-20
+    // version: 0.15.0, last updated 2024-06-15
     // NOTE: executables must have executable permission in source code
-    static let IPFSExecutableURL: URL = {
+    // NOTE: skip migration process from IPFS 0.15.0 to 0.28.0.
+    static let IPFSExecutablePath: URL = {
         switch ProcessInfo.processInfo.machineHardwareName {
         case "arm64":
-            return Bundle.main.url(forResource: "ipfs-arm64", withExtension: nil)!
+            return Bundle.main.url(forResource: "ipfs-arm64-0.15", withExtension: "bin")!
         case "x86_64":
-            return Bundle.main.url(forResource: "ipfs-amd64", withExtension: nil)!
+            return Bundle.main.url(forResource: "ipfs-amd64-0.15", withExtension: "bin")!
         default:
             fatalError("Planet is not supported on your operating system.")
         }
     }()
 
-    static let IPFSRepositoryURL: URL = {
+    static let IPFSRepositoryPath: URL = {
         // ~/Library/Containers/xyz.planetable.Planet/Data/Library/Application\ Support/ipfs/
         let url = URLUtils.applicationSupportPath.appendingPathComponent("ipfs", isDirectory: true)
         try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()
 
+    static let IPFSRepoVersion: Int = {
+        return 15
+    }()
+
     let arguments: [String]
 
     @discardableResult func run() throws -> (ret: Int, out: Data, err: Data) {
         let process = Process()
-        process.executableURL = IPFSCommand.IPFSExecutableURL
+        process.executableURL = IPFSCommand.IPFSExecutablePath
         process.arguments = arguments
 
         var env = ProcessInfo.processInfo.environment
-        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryURL.path
+        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryPath.path
         process.environment = env
 
         let outputPipe = Pipe()
@@ -38,7 +45,7 @@ struct IPFSCommand {
         outputPipe.fileHandleForReading.readabilityHandler = { handler in
             let data = handler.availableData
             guard data.count > 0 else {
-                try? handler.close()
+                handler.closeFile()
                 return
             }
             outputData.append(data)
@@ -50,7 +57,7 @@ struct IPFSCommand {
         errorPipe.fileHandleForReading.readabilityHandler = { handler in
             let data = handler.availableData
             guard data.count > 0 else {
-                try? handler.close()
+                handler.closeFile()
                 return
             }
             errorData.append(data)
@@ -58,6 +65,10 @@ struct IPFSCommand {
         process.standardError = errorPipe
 
         try process.run()
+
+        process.terminationHandler = { process in
+            // Clean up code here
+        }
         process.waitUntilExit()
 
         outputPipe.fileHandleForReading.readabilityHandler = nil
@@ -72,11 +83,11 @@ struct IPFSCommand {
         completionHandler: ((_ ret: Int) -> Void)? = nil
     ) throws {
         let process = Process()
-        process.executableURL = IPFSCommand.IPFSExecutableURL
+        process.executableURL = IPFSCommand.IPFSExecutablePath
         process.arguments = arguments
 
         var env = ProcessInfo.processInfo.environment
-        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryURL.path
+        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryPath.path
         process.environment = env
 
         let outputPipe = Pipe()
@@ -114,6 +125,10 @@ struct IPFSCommand {
         IPFSCommand(arguments: ["init"])
     }
 
+    static func IPFSVersion() -> IPFSCommand {
+        IPFSCommand(arguments: ["version"])
+    }
+
     static func updateAPIPort(port: UInt16) -> IPFSCommand {
         IPFSCommand(arguments: ["config", "Addresses.API", "/ip4/127.0.0.1/tcp/\(port)"])
     }
@@ -127,7 +142,7 @@ struct IPFSCommand {
             "config",
             "Addresses.Swarm",
             "[\"/ip4/0.0.0.0/tcp/\(port)\", \"/ip6/::/tcp/\(port)\", \"/ip4/0.0.0.0/udp/\(port)/quic\", \"/ip6/::/udp/\(port)/quic\"]",
-            "--json"
+            "--json",
         ])
     }
 
@@ -136,12 +151,78 @@ struct IPFSCommand {
             "config",
             "Peering.Peers",
             peersJSON,
-            "--json"
+            "--json",
+        ])
+    }
+
+    static func setResolvers(resolversJSON: String) -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "DNS.Resolvers",
+            resolversJSON,
+            "--json",
+        ])
+    }
+
+    static func setSwarmConnMgr(_ jsonString: String) -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "Swarm.ConnMgr",
+            jsonString,
+            "--json",
+        ])
+    }
+
+    static func setAccessControlAllowOrigin(_ jsonString: String) -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "API.HTTPHeaders.Access-Control-Allow-Origin",
+            jsonString,
+            "--json",
+        ])
+    }
+
+    static func setAccessControlAllowMethods(_ jsonString: String) -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "API.HTTPHeaders.Access-Control-Allow-Methods",
+            jsonString,
+            "--json",
+        ])
+    }
+
+    /// Set IPNS options for Kubo 0.28.0 or later
+    static func setIPNSMaxCacheTTL() -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "Ipns.MaxCacheTTL",
+            "\"30s\"",
+            "--json",
+        ])
+    }
+
+    static func setIPNSUsePubsub() -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "Ipns.UsePubsub",
+            "true",
+            "--json",
+        ])
+    }
+
+    static func setGatewayHeaders() -> IPFSCommand {
+        IPFSCommand(arguments: [
+            "config",
+            "--json",
+            "Gateway.HTTPHeaders.Cache-Control",
+            "null",
         ])
     }
 
     static func launchDaemon() -> IPFSCommand {
-        IPFSCommand(arguments: ["daemon", "--enable-namesys-pubsub", "--enable-pubsub-experiment"])
+        IPFSCommand(arguments: [
+            "daemon", "--migrate", "--enable-namesys-pubsub", "--enable-pubsub-experiment",
+        ])
     }
 
     static func shutdownDaemon() -> IPFSCommand {
@@ -153,15 +234,27 @@ struct IPFSCommand {
     }
 
     static func getFileCID(file: URL) -> IPFSCommand {
-        IPFSCommand(arguments: ["add", file.path, "--cid-version=1", "--only-hash"])
+        IPFSCommand(arguments: ["add", file.path, "--quieter", "--cid-version=1", "--only-hash"])
     }
 
-    static func exportKey(name: String, target: URL) -> IPFSCommand {
-        IPFSCommand(arguments: ["key", "export", name, "-o", target.path])
+    static func getFileCIDv0(file: URL) -> IPFSCommand {
+        IPFSCommand(arguments: ["add", file.path, "--quieter", "--cid-version=0", "--pin"])
     }
 
-    static func importKey(name: String, target: URL) -> IPFSCommand {
-        IPFSCommand(arguments: ["key", "import", name, target.path])
+    static func exportKey(name: String, target: URL, format: String = "") -> IPFSCommand {
+        var arguments: [String] = ["key", "export", name, "-o", target.path]
+        if format != "" {
+            arguments.append("--format=\(format)")
+        }
+        return IPFSCommand(arguments: arguments)
+    }
+
+    static func importKey(name: String, target: URL, format: String = "") -> IPFSCommand {
+        var arguments: [String] = ["key", "import", name, target.path]
+        if format != "" {
+            arguments.append("--format=\(format)")
+        }
+        return IPFSCommand(arguments: arguments)
     }
 
     // NOTE: IPFS CLI calls internal HTTP API to communicate
@@ -173,9 +266,14 @@ struct IPFSCommand {
     static func deleteKey(name: String) -> IPFSCommand {
         IPFSCommand(arguments: ["key", "rm", name])
     }
+
+    static func listKeys() -> IPFSCommand {
+        IPFSCommand(arguments: ["key", "list"])
+    }
 }
 
-struct IPFSMigration {
+/*
+struct IPFSMigrationCommand {
     static let repoVersion = 12
 
     static let RepoMigrationExecutableURL: URL = {
@@ -199,7 +297,7 @@ struct IPFSMigration {
         ]
 
         var env = ProcessInfo.processInfo.environment
-        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryURL.path
+        env["IPFS_PATH"] = IPFSCommand.IPFSRepositoryPath.path
         process.environment = env
 
         let outputPipe = Pipe()
@@ -235,3 +333,4 @@ struct IPFSMigration {
         return (Int(process.terminationStatus), outputData, errorData)
     }
 }
+*/

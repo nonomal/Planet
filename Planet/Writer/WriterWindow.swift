@@ -1,4 +1,6 @@
 import SwiftUI
+import Cocoa
+
 
 class WriterWindow: NSWindow {
     let draft: DraftModel
@@ -6,42 +8,43 @@ class WriterWindow: NSWindow {
 
     init(draft: DraftModel) {
         self.draft = draft
-        viewModel = WriterViewModel()
+        self.viewModel = WriterViewModel()
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 320),
             styleMask: [.closable, .miniaturizable, .resizable, .titled, .unifiedTitleAndToolbar, .fullSizeContentView],
             backing: .buffered,
-            defer: false
+            defer: true
         )
-        try? draft.renderPreview()
-        titleVisibility = .visible
-        isMovableByWindowBackground = true
-        titlebarAppearsTransparent = false
-        toolbarStyle = .unified
+        try? self.draft.renderPreview()
+        self.titleVisibility = .visible
+        self.isMovableByWindowBackground = true
+        self.titlebarAppearsTransparent = false
+        self.toolbarStyle = .unified
+        self.isReleasedWhenClosed = false
         let toolbar = NSToolbar(identifier: "WriterToolbar")
         toolbar.displayMode = .iconOnly
         toolbar.delegate = self
         self.toolbar = toolbar
-        delegate = self
-        isReleasedWhenClosed = false
-        contentView = NSHostingView(rootView: WriterView(draft: draft, viewModel: viewModel))
-        center()
-        makeKeyAndOrderFront(nil)
+        self.delegate = self
+        self.contentView = NSHostingView(rootView: WriterView(draft: draft, viewModel: viewModel))
+        self.center()
+        self.setFrameAutosaveName("PlanetWriter-\(draft.planetUUIDString)")
+        self.makeKeyAndOrderFront(nil)
+        // MARK: TODO: Add a offset if there's an opened writer window in the center.
+    }
+
+    deinit {
+        debugPrint("WriterWindow deinit.")
     }
 
     @objc func send(_ sender: Any?) {
-        if draft.title.isEmpty {
-            viewModel.isShowingEmptyTitleAlert = true
-            return
-        }
         do {
             try draft.saveToArticle()
-            WriterStore.shared.writers.removeValue(forKey: draft)
-            WriterStore.shared.setActiveDraft(draft: nil)
-
-            close()
+            Task { @MainActor in
+                WriterStore.shared.closeWriterWindow(byDraftID: self.draft.id)
+            }
         } catch {
-            PlanetStore.shared.alert(title: "Failed to send article")
+            PlanetStore.shared.alert(title: "Failed to send article: \(error)")
         }
     }
 
@@ -56,6 +59,10 @@ class WriterWindow: NSWindow {
     @objc func attachVideo(_ sender: Any?) {
         viewModel.chooseVideo()
     }
+
+    @objc func attachAudio(_ sender: Any?) {
+        viewModel.chooseAudio()
+    }
 }
 
 extension NSToolbarItem.Identifier {
@@ -63,6 +70,7 @@ extension NSToolbarItem.Identifier {
     static let insertEmoji = NSToolbarItem.Identifier("insertEmoji")
     static let attachPhoto = NSToolbarItem.Identifier("attachPhoto")
     static let attachVideo = NSToolbarItem.Identifier("attachVideo")
+    static let attachAudio = NSToolbarItem.Identifier("attachAudio")
 }
 
 extension WriterWindow: NSToolbarDelegate {
@@ -104,17 +112,26 @@ extension WriterWindow: NSToolbarDelegate {
                 image: NSImage(systemSymbolName: "video.badge.plus", accessibilityDescription: "Attach Video")!,
                 selector: "attachVideo:"
             )
+        case .attachAudio:
+            let title = NSLocalizedString("Attach Audio", comment: "Attach Audio")
+            return makeToolbarButton(
+                itemIdentifier: .attachAudio,
+                title: title,
+                image: NSImage(systemSymbolName: "waveform.badge.plus", accessibilityDescription: "Attach Audio")!,
+                selector: "attachAudio:"
+            )
+
         default:
             return nil
         }
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.send, .insertEmoji, .attachPhoto, .attachVideo, .flexibleSpace]
+        [.send, .insertEmoji, .attachPhoto, .attachVideo, .attachAudio, .flexibleSpace]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.send, .insertEmoji, .attachPhoto, .attachVideo]
+        [.send, .insertEmoji, .attachPhoto, .attachVideo, .attachAudio]
     }
 
     func toolbarWillAddItem(_ notification: Notification) {
@@ -145,17 +162,14 @@ extension WriterWindow: NSToolbarDelegate {
             toolbarItem.isNavigational = false
         }
 
-        // let button = NSButton()
-        // button.bezelStyle = .texturedRounded
-        // button.image = image
-        // button.action = Selector((selector))
-        // toolbarItem.view = button
+        let button = NSButton(frame: CGRect(x: 0, y: 0, width: 45, height: 28))
+        button.widthAnchor.constraint(equalToConstant: button.frame.width).isActive = true
+        button.heightAnchor.constraint(equalToConstant: button.frame.height).isActive = true
+        button.bezelStyle = .texturedRounded
+        button.image = image
+        button.action = Selector((selector))
+        toolbarItem.view = button
 
-        toolbarItem.isBordered = true
-        toolbarItem.image = image
-        toolbarItem.action = Selector((selector))
-
-        // toolbarItem.view = button
         toolbarItem.toolTip = title
         toolbarItem.label = title
         return toolbarItem
@@ -164,14 +178,45 @@ extension WriterWindow: NSToolbarDelegate {
 
 extension WriterWindow: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        true
+        if (viewModel.madeDiscardChoice) {
+            return true
+        }
+        let draftCurrentContentSHA256 = draft.contentSHA256()
+        debugPrint("Draft contentSHA256: current - \(draftCurrentContentSHA256) / initial - \(draft.initialContentSHA256)")
+        if draftCurrentContentSHA256 != draft.initialContentSHA256 {
+            viewModel.isShowingDiscardConfirmation = true
+            return false
+        }
+        if let target = draft.target {
+            switch target {
+            case .myPlanet(let wrapper):
+                let planet = wrapper.value
+                if draft.isEmpty {
+                    debugPrint("Draft for planet \(planet.name) is empty, delete the draft now")
+                    try? draft.delete()
+                }
+            default:
+                break
+            }
+        }
+        return true
     }
 
     func windowWillClose(_ notification: Notification) {
-        WriterStore.shared.writers.removeValue(forKey: draft)
+        Task { @MainActor in
+            WriterStore.shared.closeWriterWindow(byDraftID: self.draft.id)
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        WriterStore.shared.setActiveDraft(draft: draft)
+        Task { @MainActor in
+            KeyboardShortcutHelper.shared.activeWriterWindow = self
+        }
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        Task { @MainActor in
+            KeyboardShortcutHelper.shared.activeWriterWindow = nil
+        }
     }
 }

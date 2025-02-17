@@ -5,7 +5,9 @@ struct WriterTextView: NSViewRepresentable {
     @Binding var text: String
     @State var selectedRanges: [NSValue] = []
 
-    var font: NSFont? = .monospacedSystemFont(ofSize: 14, weight: .regular)
+    // var font: NSFont? = .monospacedSystemFont(ofSize: 14, weight: .regular)
+    // Use 14pt Menlo font as default font
+    var font: NSFont? = NSFont(name: "Menlo", size: 14)
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -15,7 +17,7 @@ struct WriterTextView: NSViewRepresentable {
         let textView = WriterCustomTextView(draft: draft, text: text, font: font)
         textView.delegate = context.coordinator
         NotificationCenter.default.addObserver(
-            forName: Notification.Name.writerNotification(.insertText, for: draft),
+            forName: .writerNotification(.insertText, for: draft),
             object: nil,
             queue: .main
         ) { notification in
@@ -23,7 +25,7 @@ struct WriterTextView: NSViewRepresentable {
             textView.insertTextAtCursor(text: text)
         }
         NotificationCenter.default.addObserver(
-            forName: Notification.Name.writerNotification(.removeText, for: draft),
+            forName: .writerNotification(.removeText, for: draft),
             object: nil,
             queue: .main
         ) { notification in
@@ -65,7 +67,10 @@ struct WriterTextView: NSViewRepresentable {
             guard let textView = notification.object as? WriterEditorTextView else {
                 return
             }
-            parent.text = textView.string
+            let textString = textView.string
+            DispatchQueue.main.async {
+                self.parent.text = textString
+            }
         }
     }
 }
@@ -117,7 +122,6 @@ class WriterCustomTextView: NSView {
 
     @ObservedObject var draft: DraftModel
     private var font: NSFont?
-    private var lastOffset: Float = 0
     unowned var delegate: NSTextViewDelegate?
     var text: String
     var selectedRanges: [NSValue] = []
@@ -127,10 +131,23 @@ class WriterCustomTextView: NSView {
         self.font = font
         self.text = text
         super.init(frame: .zero)
+        self.scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: nil, queue: .main) { [weak self] n in
+            guard let scroller = self?.scrollView.verticalScroller else { return }
+            if let currentScrollerOffset = self?.draft.scrollerOffset, currentScrollerOffset != scroller.floatValue {
+                Task { @MainActor in
+                    self?.draft.scrollerOffset = scroller.floatValue
+                }
+            }
+        }
     }
 
-    required init?(coder: NSCoder) {
-        fatalError()
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("WriterCustomTextView: required init?(coder: NSCoder) not implemented")
     }
 
     override func viewWillDraw() {
@@ -167,6 +184,10 @@ class WriterEditorTextView: NSTextView {
     init(draft: DraftModel, frame: NSRect, textContainer: NSTextContainer) {
         self.draft = draft
         super.init(frame: frame, textContainer: textContainer)
+        self.isAutomaticQuoteSubstitutionEnabled = false
+        self.isAutomaticDashSubstitutionEnabled = false
+        self.isAutomaticTextReplacementEnabled = false
+        self.enabledTextCheckingTypes = 0
     }
 
     required init?(coder: NSCoder) {
@@ -188,7 +209,7 @@ class WriterEditorTextView: NSTextView {
     override func draggingEnded(_ sender: NSDraggingInfo) {
         guard urls.count > 0 else { return }
         urls.forEach { url in
-            if let attachment = try? draft.addAttachment(path: url),
+            if let attachment = try? draft.addAttachment(path: url, type: AttachmentType.from(url)),
                let markdown = attachment.markdown {
                 NotificationCenter.default.post(
                     name: .writerNotification(.insertText, for: attachment.draft),
@@ -200,17 +221,120 @@ class WriterEditorTextView: NSTextView {
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if let pasteBoardItems = sender.draggingPasteboard.pasteboardItems {
-            urls = pasteBoardItems
-                .compactMap { $0.propertyList(forType: .fileURL) as? String }
-                .map { URL(fileURLWithPath: $0).standardized }
+        if let pasteboardObjects = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], pasteboardObjects.count > 0 {
+            urls = pasteboardObjects
         } else {
-            urls = []
+            if let pasteBoardItems = sender.draggingPasteboard.pasteboardItems {
+                urls = pasteBoardItems
+                    .compactMap { $0.propertyList(forType: .fileURL) as? String }
+                    .map { URL(fileURLWithPath: $0).standardized }
+            } else {
+                urls = []
+            }
         }
         return .copy
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        true
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        super.keyDown(with: event)
+        switch event.keyCode {
+            case 36, 76:
+                do {
+                    try processEnterOrReturnEvent()
+                } catch {
+                    debugPrint("failed to process enter / return event: \(error)")
+                }
+            default:
+                break
+        }
+    }
+
+    // MARK: - Process enter / return key event
+
+    private func processEnterOrReturnEvent() throws {
+        let selectedRange = self.selectedRange()
+        let location = selectedRange.location - 1
+        let content = NSString(string: self.string)
+        let start = getLocationOfFirstNewline(fromString: content, beforeLocation: UInt(location))
+        let end = UInt(location)
+        let range = NSRange(location: Int(start), length: Int(end - start))
+        let line = NSString(string: content.substring(with: range))
+        let regex = try NSRegularExpression(pattern: "^(\\s*)((?:(?:\\*|\\+|-|)\\s+)?)((?:\\d+\\.\\s+)?)(\\S)?", options: .anchorsMatchLines)
+        guard let result: NSTextCheckingResult = regex.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length)) else { return }
+        let indent = NSString(string: line.substring(with: result.range(at: 1)))
+        let prefix = getPrefix(result: result, line: line, start: start, indent: indent, selectedRange: selectedRange, range: range)
+        guard prefix != "" else { return }
+        var targetRange = selectedRange
+        targetRange.length = 0
+        var extendedContent = NSString(format: "%@%@ ", indent, prefix)
+        extendedContent = getExtendedContent(line: line, indent: indent, prefix: prefix, extendedContent: extendedContent, range: range)
+        self.insertText(extendedContent, replacementRange: targetRange)
+    }
+
+    private func getLocationOfFirstNewline(fromString string: NSString, beforeLocation loc: UInt) -> UInt {
+        var location: UInt = loc
+        if location > string.length {
+            location = UInt(string.length)
+        }
+        var start: UInt = 0
+        string.getLineStart(&start, end: nil, contentsEnd: nil, for: NSRange(location: Int(location), length: 0))
+        return start
+    }
+
+    private func getPrefix(result: NSTextCheckingResult, line: NSString, start: UInt, indent: NSString, selectedRange: NSRange, range: NSRange) -> NSString {
+        var prefix: NSString = NSString(string: "")
+        let isUnordered = result.range(at: 2).length != 0
+        let isOrdered = result.range(at: 3).length != 0
+        let isPreviousLineEmpty = result.range(at: 4).length == 0
+        if isPreviousLineEmpty {
+            var replaceRange = NSRange(location: NSNotFound, length: 0)
+            if isUnordered {
+                replaceRange = result.range(at: 2)
+            } else if isOrdered {
+                replaceRange = result.range(at: 3)
+            }
+            if replaceRange.length > 0 {
+                replaceRange.location += Int(start)
+                if indent != "" {
+                    // keep sublevel indent after return.
+                    var targetRange = selectedRange
+                    targetRange.length = 0
+                    self.insertText(indent, replacementRange: targetRange)
+                }
+                self.shouldChangeText(in: range, replacementString: nil)
+                self.replaceCharacters(in: range, with: "")
+            }
+        } else if isUnordered {
+            var theRange = result.range(at: 2)
+            theRange.length -= 1
+            prefix = NSString(string: line.substring(with: theRange))
+        } else if isOrdered {
+            var theRange = result.range(at: 3)
+            theRange.length -= 1
+            let capturedIndex = NSString(string: line.substring(with: theRange)).integerValue
+            prefix = NSString(format: "%ld.", capturedIndex + 1)
+        }
+        return prefix
+    }
+
+    private func getExtendedContent(line: NSString, indent: NSString, prefix: NSString, extendedContent: NSString, range: NSRange) -> NSString {
+        var extendedContent = extendedContent
+        // Improvements for todo item in unordered list:
+        // "- [ ] "
+        // "- [x] "
+        // "- [X] "
+        if line.hasPrefix("- [ ] ") || line.hasPrefix("- [x] ") || line.hasPrefix("- [X] ") {
+            if line.length == "- [ ] ".count {
+                extendedContent = NSString(format: "")
+                self.replaceCharacters(in: range, with: "")
+            } else {
+                extendedContent = NSString(format: "%@%@ [ ] ", indent, prefix)
+            }
+        }
+        return extendedContent
     }
 }

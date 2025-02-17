@@ -16,9 +16,23 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+        with:
+          lfs: true
+      
+      - name: Checkout LFS objects
+        run: git lfs pull
+
+      - name: Set release SUFeedURL
+        run: /usr/libexec/PlistBuddy -c "Set :SUFeedURL https://opensource.planetable.xyz/planet/appcast.xml" Planet/Info.plist
+      
+      - name: Set WalletConnectV2 Project ID
+        run: /usr/libexec/PlistBuddy -c "Set :WALLETCONNECTV2_PROJECT_ID ${{ secrets.WALLETCONNECTV2_PROJECT_ID }}" Planet/Info.plist
+      
+      - name: Set Etherscan API token
+        run: /usr/libexec/PlistBuddy -c "Set :ETHERSCAN_API_TOKEN ${{ secrets.ETHERSCAN_API_TOKEN }}" Planet/Info.plist
 
       - name: Fix Package Dependencies
-        run: xcodebuild -resolvePackageDependencies
+        run: xcodebuild -resolvePackageDependencies -onlyUsePackageVersionsFromResolvedFile
 
       - name: Show Build Version
         run: xcodebuild -version
@@ -48,7 +62,7 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
           # import certificate from secrets
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode --output $CERTIFICATE_PATH
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 -d -o $CERTIFICATE_PATH
 
           # create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
@@ -63,7 +77,7 @@ jobs:
         env:
           scheme: ${{ matrix.run-config['scheme'] }}
         run: |
-          xcodebuild archive -scheme ${scheme} -xcconfig "Planet/Release.xcconfig" -archivePath archive/Planet.xcarchive -showBuildTimingSummary -allowProvisioningUpdates
+          xcodebuild archive -scheme ${scheme} -archivePath archive/Planet.xcarchive -showBuildTimingSummary -allowProvisioningUpdates
 
       - name: Prepare for Codesign
         run: |
@@ -72,9 +86,7 @@ jobs:
 
       - name: Codesign with Developer ID
         run: |
-          # xcrun codesign --options runtime --deep --force --verbose --timestamp --entitlements "Planet/Planet.entitlements" --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework
-
-          xcrun codesign --options runtime --deep --force --verbose --timestamp --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/org.sparkle-project.InstallerLauncher.xpc
+          xcrun codesign --options runtime --deep --force --verbose --timestamp --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc
           xcrun codesign --options runtime --deep --force --verbose --timestamp --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
           xcrun codesign --options runtime --deep --force --verbose --timestamp --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app
           xcrun codesign --options runtime --deep --force --verbose --timestamp --sign "Developer ID Application: ${{ secrets.DEVELOPER_NAME }}" to-be-signed/Planet.app/Contents/Frameworks/Sparkle.framework
@@ -89,16 +101,22 @@ jobs:
 
       - name: Staple
         run: |
-          xcrun stapler staple to-be-signed/Planet.app
+          xcrun stapler staple -v to-be-signed/Planet.app
 
-      - name: Prepare for Release
+      - name: Generate Planet.zip
         run: |
           ditto -c -k --keepParent to-be-signed/Planet.app Planet.zip
+
+      - name: Generate Planet.zip.dSYM.zip
+        run: |
+          ditto -c -k --keepParent archive/Planet.xcarchive/dSYMs/Planet.app.dSYM Planet.app.dSYM.zip
 
       - name: Release App
         uses: softprops/action-gh-release@v1
         with:
-          files: Planet.zip
+          files: |
+            Planet.zip
+            Planet.app.dSYM.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -116,7 +134,8 @@ jobs:
         env:
           WORKPLACE: ${{ github.workspace }}
         run: |
-          mkdir -p Release & cp Planet.zip Release/
+          mkdir -p Release
+          cp Planet.zip Release/
           ${{ secrets.SPARKLE_GENERATE }} $WORKPLACE/Release ${{ env.RELEASE_VERSION }}
 
       - name: Upload Sparkle Appcast

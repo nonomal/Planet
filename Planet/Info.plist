@@ -2,8 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ATSApplicationFontsPath</key>
+	<string>.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
+		<dict>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<integer>1</integer>
+			<key>CFBundleTypeName</key>
+			<string>AirDrop Planet Data</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>$(ORGANIZATION_IDENTIFIER_PREFIX).planet.data</string>
+			</array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeIconSystemGenerated</key>
 			<integer>1</integer>
@@ -16,6 +32,66 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>$(ORGANIZATION_IDENTIFIER_PREFIX).planet.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<integer>1</integer>
+			<key>CFBundleTypeName</key>
+			<string>Drop Images</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<integer>1</integer>
+			<key>CFBundleTypeName</key>
+			<string>Drop Video</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.mpeg-4</string>
+				<string>public.avi</string>
+				<string>com.apple.quicktime-movie</string>
+				<string>public.mpeg</string>
+				<string>public.movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<integer>1</integer>
+			<key>CFBundleTypeName</key>
+			<string>Drop PDF</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<integer>1</integer>
+			<key>CFBundleTypeName</key>
+			<string>Planet Article Data</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>$(ORGANIZATION_IDENTIFIER_PREFIX).planet.article.data</string>
 			</array>
 		</dict>
 	</array>
@@ -32,14 +108,20 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSDockTilePlugIn</key>
+	<string>PlanetDockPlugIn.docktileplugin</string>
 	<key>ORGANIZATION_IDENTIFIER_PREFIX</key>
 	<string>$(ORGANIZATION_IDENTIFIER_PREFIX)</string>
-	<key>SUFeedURL</key>
-	<string>https://opensource.planetable.xyz/planet/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>ciHPM+QD+p7Rceljd0MT42MfrcVhZchEVJTUW98R3Wk=</string>
+	<key>PLANET_APP_ICON_NAME</key>
+	<string>$(PLANET_APP_ICON_NAME)</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>$(SPARKLE_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>ciHPM+QD+p7Rceljd0MT42MfrcVhZchEVJTUW98R3Wk=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -65,6 +147,32 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>planet</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Planet Article Data</string>
+			<key>UTTypeIcons</key>
+			<dict>
+				<key>UTTypeIconBackgroundName</key>
+				<string>AppDataIcon-Fill</string>
+				<key>UTTypeIconBadgeName</key>
+				<string>AppDataIcon-Image</string>
+				<key>UTTypeIconText</key>
+				<string>data</string>
+			</dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(ORGANIZATION_IDENTIFIER_PREFIX).planet.article.data</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>article</string>
 				</array>
 			</dict>
 		</dict>
@@ -97,6 +205,40 @@
 				</array>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Planet Article Data</string>
+			<key>UTTypeIcons</key>
+			<dict>
+				<key>UTTypeIconBackgroundName</key>
+				<string>AppDataIcon-Fill</string>
+				<key>UTTypeIconBadgeName</key>
+				<string>AppDataIcon-Image</string>
+				<key>UTTypeIconText</key>
+				<string>data</string>
+			</dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(ORGANIZATION_IDENTIFIER_PREFIX).planet.article.data</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>article</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
+	<key>WALLETCONNECTV2_ENABLED</key>
+	<true/>
+	<key>WALLETCONNECTV2_PROJECT_ID</key>
+	<string>$(WALLETCONNECTV2_PROJECT_ID)</string>
+	<key>ETHERSCAN_API_TOKEN</key>
+	<string>$(ETHERSCAN_API_TOKEN)</string>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
 </dict>
 </plist>

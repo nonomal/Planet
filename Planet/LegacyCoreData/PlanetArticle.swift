@@ -70,6 +70,7 @@ class PlanetArticle: NSManagedObject {
         let articleLink = link ?? "/\(articleID)/"
         let articleTitle = title ?? ""
         let articleContent = content ?? ""
+        let articleSummary = ""
         let articleCreated = created ?? Date()
         let articleStarred = starred
 
@@ -78,9 +79,13 @@ class PlanetArticle: NSManagedObject {
             link: articleLink,
             title: articleTitle,
             content: articleContent,
+            summary: articleSummary,
             created: articleCreated,
             starred: articleStarred,
-            videoFilename: nil
+            starType: .star,
+            videoFilename: nil,
+            audioFilename: nil,
+            attachments: nil
         )
         return newModel
     }
@@ -102,7 +107,9 @@ class PlanetArticle: NSManagedObject {
             created: articleCreated,
             read: articleRead,
             starred: articleStarred,
-            videoFilename: nil
+            videoFilename: nil,
+            audioFilename: nil,
+            attachments: nil
         )
         return newModel
     }
